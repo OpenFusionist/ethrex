@@ -150,7 +150,8 @@ pub async fn init_store(datadir: impl AsRef<Path>, genesis: Genesis) -> Result<S
 
 /// Initializes a pre-existing Store
 pub async fn load_store(datadir: &Path) -> Result<Store, StoreError> {
-    let store = open_store(datadir)?;
+    let mut store = open_store(datadir)?;
+    store.load_chain_config().await?;
     store.load_initial_state().await?;
     Ok(store)
 }
@@ -434,14 +435,11 @@ pub async fn init_l1(
 
     let network = get_network(&opts);
 
-    let genesis = network.get_genesis()?;
-    display_chain_initialization(&genesis);
-
     raise_fd_limit()?;
     debug!("Preloading KZG trusted setup");
     ethrex_crypto::kzg::warm_up_trusted_setup();
 
-    let store = match init_store(datadir, genesis).await {
+    let mut store = match open_store(datadir) {
         Ok(store) => store,
         Err(err @ StoreError::IncompatibleDBVersion { .. })
         | Err(err @ StoreError::NotFoundDBVersion { .. }) => {
@@ -451,6 +449,40 @@ pub async fn init_l1(
         }
         Err(error) => return Err(eyre::eyre!("Failed to create Store: {error}")),
     };
+
+    let has_genesis = match store.get_earliest_block_number().await {
+        Ok(_) => true,
+        Err(StoreError::MissingEarliestBlockNumber) => false,
+        Err(error) => return Err(eyre::eyre!("Failed to read store state: {error}")),
+    };
+
+    if has_genesis {
+        if matches!(network, Network::GenesisPath(_)) {
+            info!(
+                "Genesis already present in DB, skipping provided genesis file. Use a new datadir or remove the DB to switch networks."
+            );
+        } else {
+            info!("Genesis already present in DB, skipping genesis file load.");
+        }
+        store.load_chain_config().await?;
+        store.load_initial_state().await?;
+        if let Some(expected_chain_id) = network.chain_id_hint() {
+            let stored_chain_id = store.get_chain_config().chain_id;
+            if stored_chain_id != expected_chain_id {
+                return Err(eyre::eyre!(
+                    "The chain configuration stored in the database is incompatible with the provided configuration. If you intended to switch networks, choose another datadir or clear the database (e.g., run `ethrex removedb`) and try again."
+                ));
+            }
+        }
+    } else {
+        let genesis = network.get_genesis()?;
+        store.add_initial_state(genesis).await?;
+    }
+
+    let genesis_header = store
+        .get_block_header(0)?
+        .ok_or_else(|| eyre::eyre!("Genesis header missing from database"))?;
+    display_chain_initialization(&store.get_chain_config(), genesis_header.hash());
 
     if opts.syncmode == SyncMode::Full {
         store.generate_flatkeyvalue()?;

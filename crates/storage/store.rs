@@ -728,6 +728,23 @@ impl Store {
         self.write_async(CHAIN_DATA, key, value).await
     }
 
+    /// Loads the chain configuration values from the database.
+    pub async fn load_chain_config(&mut self) -> Result<(), StoreError> {
+        let key = chain_data_key(ChainDataIndex::ChainConfig);
+        let Some(value) = self.read_async(CHAIN_DATA, key).await? else {
+            return Err(StoreError::Custom(
+                "Missing chain configuration in database".to_string(),
+            ));
+        };
+        let chain_config = serde_json::from_slice(&value).map_err(|error| {
+            StoreError::Custom(format!(
+                "Failed to deserialize chain configuration: {error}"
+            ))
+        })?;
+        self.chain_config = chain_config;
+        Ok(())
+    }
+
     /// Update earliest block number
     pub async fn update_earliest_block_number(
         &self,

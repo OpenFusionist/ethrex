@@ -1,7 +1,10 @@
 use crate::decode;
 use bytes::Bytes;
 use directories::ProjectDirs;
-use ethrex_common::types::{Block, Genesis};
+use ethrex_common::{
+    H256,
+    types::{Block, ChainConfig},
+};
 use ethrex_p2p::{
     discv4::peer_table::PeerTable,
     sync::SyncMode,
@@ -176,19 +179,18 @@ pub fn get_minimal_client_version() -> String {
     format!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
 }
 
-pub fn display_chain_initialization(genesis: &Genesis) {
+pub fn display_chain_initialization(chain_config: &ChainConfig, genesis_hash: H256) {
     let border = "═".repeat(70);
 
     info!("{border}");
     info!("NETWORK CONFIGURATION");
     info!("{border}");
 
-    for line in genesis.config.display_config().lines() {
+    for line in chain_config.display_config().lines() {
         info!("{line}");
     }
 
     info!("");
-    let hash = genesis.get_block().hash();
-    info!("Genesis Block Hash: {hash:x}");
+    info!("Genesis Block Hash: {genesis_hash:x}");
     info!("{border}");
 }
