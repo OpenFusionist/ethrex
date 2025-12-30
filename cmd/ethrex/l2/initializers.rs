@@ -1,7 +1,7 @@
 use crate::cli::Options as L1Options;
 use crate::initializers::{
     self, get_authrpc_socket_addr, get_http_socket_addr, get_local_node_record, get_local_p2p_node,
-    get_network, get_signer, init_blockchain, init_network, open_store,
+    get_network, get_signer, init_blockchain, init_network, init_store,
 };
 use crate::l2::{L2Options, SequencerOptions};
 use crate::utils::{
@@ -11,7 +11,6 @@ use ethrex_blockchain::{Blockchain, BlockchainType, L2Config};
 use ethrex_common::fd_limit::raise_fd_limit;
 use ethrex_common::types::fee_config::{FeeConfig, L1FeeConfig, OperatorFeeConfig};
 use ethrex_common::{Address, types::DEFAULT_BUILDER_GAS_CEIL};
-use ethrex_config::networks::Network;
 use ethrex_l2::sequencer::block_producer;
 use ethrex_l2::sequencer::l1_committer::{self, regenerate_state};
 use ethrex_p2p::{
@@ -22,7 +21,7 @@ use ethrex_p2p::{
     sync_manager::SyncManager,
     types::{Node, NodeRecord},
 };
-use ethrex_storage::{Store, error::StoreError};
+use ethrex_storage::Store;
 use ethrex_storage_rollup::{EngineTypeRollup, StoreRollup};
 use eyre::OptionExt;
 use secp256k1::SecretKey;
@@ -189,35 +188,8 @@ pub async fn init_l2(
 
     let network = get_network(&opts.node_opts);
 
-    let mut store = open_store(&datadir)?;
-    let has_genesis = match store.get_earliest_block_number().await {
-        Ok(_) => true,
-        Err(StoreError::MissingEarliestBlockNumber) => false,
-        Err(error) => return Err(eyre::eyre!("Failed to read store state: {error}")),
-    };
-
-    if has_genesis {
-        if matches!(network, Network::GenesisPath(_)) {
-            info!(
-                "Genesis already present in DB, skipping provided genesis file. Use a new datadir or remove the DB to switch networks."
-            );
-        } else {
-            info!("Genesis already present in DB, skipping genesis file load.");
-        }
-        store.load_chain_config().await?;
-        store.load_initial_state().await?;
-        if let Some(expected_chain_id) = network.chain_id_hint() {
-            let stored_chain_id = store.get_chain_config().chain_id;
-            if stored_chain_id != expected_chain_id {
-                return Err(eyre::eyre!(
-                    "The chain configuration stored in the database is incompatible with the provided configuration. If you intended to switch networks, choose another datadir or clear the database (e.g., run `ethrex removedb`) and try again."
-                ));
-            }
-        }
-    } else {
-        let genesis = network.get_genesis()?;
-        store.add_initial_state(genesis).await?;
-    }
+    let genesis = network.get_genesis()?;
+    let store = init_store(&datadir, genesis.clone()).await?;
     let rollup_store = init_rollup_store(&rollup_store_dir).await;
 
     let operator_fee_config = get_operator_fee_config(&opts.sequencer_opts)?;

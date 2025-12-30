@@ -8,7 +8,9 @@ use crate::{
 use ethrex_blockchain::{Blockchain, BlockchainOptions, BlockchainType};
 use ethrex_common::fd_limit::raise_fd_limit;
 use ethrex_common::types::Genesis;
-use ethrex_config::networks::Network;
+use ethrex_config::networks::{
+    HOLESKY_CHAIN_ID, HOODI_CHAIN_ID, MAINNET_CHAIN_ID, SEPOLIA_CHAIN_ID, Network, PublicNetwork,
+};
 
 use ethrex_metrics::profiling::{FunctionProfilingLayer, initialize_block_processing_profile};
 use ethrex_metrics::rpc::initialize_rpc_metrics;
@@ -49,6 +51,9 @@ use tracing_subscriber::{
 const _: () = {
     compile_error!("Database feature must be enabled (Available: `rocksdb`).");
 };
+
+const LOCAL_DEVNET_CHAIN_ID: u64 = 9;
+const LOCAL_DEVNETL2_CHAIN_ID: u64 = 65_536_999;
 
 pub fn init_tracing(
     opts: &Options,
@@ -301,6 +306,21 @@ pub fn get_network(opts: &Options) -> Network {
     opts.network.clone().unwrap_or(default)
 }
 
+fn expected_chain_id(network: &Network) -> Option<u64> {
+    match network {
+        Network::PublicNetwork(public_network) => Some(match public_network {
+            PublicNetwork::Hoodi => HOODI_CHAIN_ID,
+            PublicNetwork::Holesky => HOLESKY_CHAIN_ID,
+            PublicNetwork::Sepolia => SEPOLIA_CHAIN_ID,
+            PublicNetwork::Mainnet => MAINNET_CHAIN_ID,
+        }),
+        Network::LocalDevnet => Some(LOCAL_DEVNET_CHAIN_ID),
+        Network::LocalDevnetL2 => Some(LOCAL_DEVNETL2_CHAIN_ID),
+        Network::L2Chain(chain_id) => Some(*chain_id),
+        Network::GenesisPath(_) => None,
+    }
+}
+
 pub fn get_bootnodes(opts: &Options, network: &Network, datadir: &Path) -> Vec<Node> {
     let mut bootnodes: Vec<Node> = opts.bootnodes.clone();
 
@@ -466,7 +486,7 @@ pub async fn init_l1(
         }
         store.load_chain_config().await?;
         store.load_initial_state().await?;
-        if let Some(expected_chain_id) = network.chain_id_hint() {
+        if let Some(expected_chain_id) = expected_chain_id(&network) {
             let stored_chain_id = store.get_chain_config().chain_id;
             if stored_chain_id != expected_chain_id {
                 return Err(eyre::eyre!(
