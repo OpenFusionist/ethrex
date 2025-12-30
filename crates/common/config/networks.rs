@@ -32,8 +32,6 @@ pub const MAINNET_CHAIN_ID: u64 = 0x1;
 pub const HOLESKY_CHAIN_ID: u64 = 0x4268;
 pub const HOODI_CHAIN_ID: u64 = 0x88bb0;
 pub const SEPOLIA_CHAIN_ID: u64 = 0xAA36A7;
-pub const LOCAL_DEVNET_CHAIN_ID: u64 = 9;
-pub const LOCAL_DEVNETL2_CHAIN_ID: u64 = 65_536_999;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Network {
@@ -110,21 +108,6 @@ impl fmt::Display for Network {
 impl Network {
     pub fn mainnet() -> Self {
         Network::PublicNetwork(PublicNetwork::Mainnet)
-    }
-
-    pub fn chain_id_hint(&self) -> Option<u64> {
-        match self {
-            Network::PublicNetwork(public_network) => Some(match public_network {
-                PublicNetwork::Hoodi => HOODI_CHAIN_ID,
-                PublicNetwork::Holesky => HOLESKY_CHAIN_ID,
-                PublicNetwork::Sepolia => SEPOLIA_CHAIN_ID,
-                PublicNetwork::Mainnet => MAINNET_CHAIN_ID,
-            }),
-            Network::LocalDevnet => Some(LOCAL_DEVNET_CHAIN_ID),
-            Network::LocalDevnetL2 => Some(LOCAL_DEVNETL2_CHAIN_ID),
-            Network::L2Chain(chain_id) => Some(*chain_id),
-            Network::GenesisPath(_) => None,
-        }
     }
 
     pub fn get_genesis(&self) -> Result<Genesis, GenesisError> {
